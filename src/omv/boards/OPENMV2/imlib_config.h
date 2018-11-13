@@ -97,7 +97,7 @@
 //#define IMLIB_ENABLE_QRCODES
 
 // Enable find_apriltags() (64 KB)
-//#define IMLIB_ENABLE_APRILTAGS
+#define IMLIB_ENABLE_APRILTAGS
 
 // Enable find_datamatrices() (26 KB)
 //#define IMLIB_ENABLE_DATAMATRICES
@@ -106,12 +106,15 @@
 //#define IMLIB_ENABLE_BARCODES
 
 // Enable LENET (200+ KB).
-//#define IMLIB_ENABLE_LENET
+#define IMLIB_ENABLE_LENET
 
 // Enable FAST (20+ KBs).
-//#define IMLIB_ENABLE_FAST
+#define IMLIB_ENABLE_FAST
 
 // Enable find_hog()
 //#define IMLIB_ENABLE_HOG
+
+// Enable CMSIS NN                                                                                                                                 
+#define IMLIB_ENABLE_CNN
 
 #endif //__IMLIB_CONFIG_H__

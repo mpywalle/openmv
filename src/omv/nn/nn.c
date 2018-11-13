@@ -5,6 +5,7 @@
  * CNN code.
  *
  */
+#include <stdio.h>
 #include "nn.h"
 #include "imlib.h"
 #include "common.h"

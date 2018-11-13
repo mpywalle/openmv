@@ -47,7 +47,7 @@ UVC_DIR=uvc
 OMV_QSTR_DEFS = $(TOP_DIR)/$(OMV_DIR)/py/qstrdefsomv.h
 
 # Target
-TARGET ?= OPENMV3
+TARGET ?= OPENMV2
 FW_DIR=$(TOP_DIR)/../firmware/$(TARGET)
 OMV_BOARD_CONFIG_DIR=$(TOP_DIR)/$(OMV_DIR)/boards/$(TARGET)/
 MP_BOARD_CONFIG_DIR=$(TOP_DIR)/$(MICROPY_DIR)/ports/stm32/boards/$(TARGET)/

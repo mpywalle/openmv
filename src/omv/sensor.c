@@ -731,6 +731,7 @@ void DCMI_VsyncExtiCallback()
 
 static void sensor_check_buffsize()
 {
+#if 0
     int bpp=0;
     switch (sensor.pixformat) {
         case PIXFORMAT_BAYER:
@@ -754,7 +755,7 @@ static void sensor_check_buffsize()
             sensor_set_pixformat(PIXFORMAT_BAYER);
         }
     }
-
+#endif
 }
 
 // This function is called back after each line transfer is complete,
