@@ -235,6 +235,15 @@ void __attribute__((weak))
 }
 #endif
 
+void f_touch(const char *path)
+{
+    FIL fp;
+    if (f_stat(&vfs_fat->fatfs, path, NULL) != FR_OK) {
+        f_open(&vfs_fat->fatfs, &fp, path, FA_WRITE | FA_CREATE_ALWAYS);
+        f_close(&fp);
+    }
+}
+
 void make_flash_fs()
 {
     FIL fp;
@@ -246,6 +255,9 @@ void make_flash_fs()
     if (f_mkfs(&vfs_fat->fatfs, FM_FAT, 0, working_buf, sizeof(working_buf)) != FR_OK) {
         __fatal_error("Could not create LFS");
     }
+
+    // Mark FS as OpenMV disk.
+    f_touch("/.openmv_disk");
 
     // Create default main.py
     f_open(&vfs_fat->fatfs, &fp, "/main.py", FA_WRITE | FA_CREATE_ALWAYS);
@@ -510,6 +522,9 @@ soft_reset:
         pyb_usb_storage_medium = PYB_USB_STORAGE_MEDIUM_FLASH;
     }
 
+    // Mark FS as OpenMV disk.
+    f_touch("/.openmv_disk");
+
     // Mount the storage device (there should be no other devices mounted at this point)
     // we allocate this structure on the heap because vfs->next is a root pointer.
     mp_vfs_mount_t *vfs = m_new_obj_maybe(mp_vfs_mount_t);
@@ -524,19 +539,14 @@ soft_reset:
     MP_STATE_VM(vfs_mount_table) = vfs;
     MP_STATE_PORT(vfs_cur) = vfs;
 
-    // set label
-    f_setlabel(&vfs_fat->fatfs, "OPENMV_DISK");
-
     // Parse OpenMV configuration file.
     openmv_config_t openmv_config;
-    if (first_soft_reset) {
-        memset(&openmv_config, 0, sizeof(openmv_config));
-        // Parse config, and init wifi if enabled.
-        ini_parse(&vfs_fat->fatfs, "/openmv.config", ini_handler_callback, &openmv_config);
-        if (openmv_config.wifidbg == true &&
-                wifidbg_init(&openmv_config.wifidbg_config) != 0) {
-                openmv_config.wifidbg = false;
-        }
+    memset(&openmv_config, 0, sizeof(openmv_config));
+    // Parse config, and init wifi if enabled.
+    ini_parse(&vfs_fat->fatfs, "/openmv.config", ini_handler_callback, &openmv_config);
+    if (openmv_config.wifidbg == true &&
+            wifidbg_init(&openmv_config.wifidbg_config) != 0) {
+        openmv_config.wifidbg = false;
     }
 
     // Run boot script(s)
