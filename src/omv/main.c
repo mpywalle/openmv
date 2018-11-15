@@ -72,10 +72,12 @@
 #include "framebuffer.h"
 
 #include "ini.h"
+#include "trace.h"
 
 int errno;
 extern char _vfs_buf;
 static fs_user_mount_t *vfs_fat = (fs_user_mount_t *) &_vfs_buf;
+fs_user_mount_t *fs_user_mount_flash = (fs_user_mount_t *) &_vfs_buf;
 pyb_thread_t pyb_thread_main;
 
 static const char fresh_main_py[] =
@@ -539,6 +541,11 @@ soft_reset:
     MP_STATE_VM(vfs_mount_table) = vfs;
     MP_STATE_PORT(vfs_cur) = vfs;
 
+	trace_init();
+
+	trace_write("====================trace log init====================\r\n");
+    trace_write("reset mode: %d.\r\n", first_soft_reset);
+
     // Parse OpenMV configuration file.
     openmv_config_t openmv_config;
     memset(&openmv_config, 0, sizeof(openmv_config));
@@ -629,6 +636,8 @@ soft_reset:
     irq_set_base_priority(IRQ_PRI_FLASH+1);
 
     // soft reset
+	trace_write("====================trace log deinit====================\r\n");
+	trace_deinit();
     storage_flush();
     timer_deinit();
     uart_deinit();

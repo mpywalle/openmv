@@ -1,3 +1,4 @@
+#if 0
 /*
  * This file is part of the OpenMV project.
  * Copyright (c) 2013/2014 Ibrahim Abdelkader <i.abdalkader@gmail.com>
@@ -11,4 +12,25 @@
 #include <stdint.h>
 void trace_init();
 void trace_insert(uint32_t x);
+#endif /* __TRACE_H__ */
+#endif
+
+#ifndef __TRACE_H__
+#define __TRACE_H__
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+#include <stdlib.h>
+#include "stdarg.h"     /* va_start() */
+#include "lib/oofatfs/ff.h"
+#include "extmod/vfs.h"
+#include "extmod/vfs_fat.h"
+
+#define TRACE_BUFFER_SIZE_C 1024
+
+int trace_init();
+
+int trace_write(char* log, ...);
+
+int trace_deinit();
 #endif /* __TRACE_H__ */
