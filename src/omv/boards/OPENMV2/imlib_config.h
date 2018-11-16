@@ -76,10 +76,10 @@
 //#define IMLIB_ENABLE_GET_SIMILARITY
 
 // Enable find_lines()
-//#define IMLIB_ENABLE_FIND_LINES
+#define IMLIB_ENABLE_FIND_LINES
 
 // Enable find_line_segments()
-//#define IMLIB_ENABLE_FIND_LINE_SEGMENTS
+#define IMLIB_ENABLE_FIND_LINE_SEGMENTS
 
 // find_lines() is required by the old find_line_segments()
 #if defined(IMLIB_ENABLE_FIND_LINE_SEGMENTS)\
@@ -88,13 +88,13 @@
 #endif
 
 // Enable find_circles()
-//#define IMLIB_ENABLE_FIND_CIRCLES
+#define IMLIB_ENABLE_FIND_CIRCLES
 
 // Enable find_rects()
-//#define IMLIB_ENABLE_FIND_RECTS
+#define IMLIB_ENABLE_FIND_RECTS
 
 // Enable find_qrcodes() (14 KB)
-//#define IMLIB_ENABLE_QRCODES
+#define IMLIB_ENABLE_QRCODES
 
 // Enable find_apriltags() (64 KB)
 #define IMLIB_ENABLE_APRILTAGS
@@ -103,7 +103,7 @@
 //#define IMLIB_ENABLE_DATAMATRICES
 
 // Enable find_barcodes() (42 KB)
-//#define IMLIB_ENABLE_BARCODES
+#define IMLIB_ENABLE_BARCODES
 
 // Enable LENET (200+ KB).
 #define IMLIB_ENABLE_LENET

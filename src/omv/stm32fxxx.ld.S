@@ -114,6 +114,7 @@ SECTIONS
     #endif
 
    . = ALIGN(4);
+	_dma_end = .;
     *(.dma_buffer)
 
   } >OMV_DMA_MEMORY
@@ -131,7 +132,7 @@ SECTIONS
 
     . = ALIGN(4);
     _edata = .;         // define a global symbol at data end
-  } >OMV_MAIN_MEMORY
+  } >OMV_SDATA_BSS_MEMORY
 
   /* Uninitialized data section */
   . = ALIGN(4);
@@ -152,7 +153,7 @@ SECTIONS
     _ebss = .;          // define a global symbol at bss end
     _bss_end = .;       // Used by gccollect
     __bss_end__ = .;
-  } >OMV_MAIN_MEMORY
+  } >OMV_SDATA_BSS_MEMORY
 
   ._heap (NOLOAD) :
   {
@@ -169,7 +170,11 @@ SECTIONS
   ._stack (NOLOAD) :
   {
     . = ALIGN(4);
+    _stack_start = .;
     . = . + _stack_size;
+
+    . = ALIGN(4);
+    _stack_end = .;
   } >OMV_MAIN_MEMORY
 
   .ARM.attributes 0 : { *(.ARM.attributes) }
