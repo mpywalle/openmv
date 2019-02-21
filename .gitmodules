@@ -1,4 +1,0 @@
-[submodule "src/micropython"]
-	path = src/micropython
-	url = https://github.com/mpywalleadv/micropython.git
-	branch = openmv4kt
