@@ -91,6 +91,7 @@ ST_CFLAGS += -I$(TOP_DIR)/$(STHAL_DIR)/include/Legacy/
 
 MP_CFLAGS += -I$(BUILD)/$(MICROPY_DIR)/
 MP_CFLAGS += -I$(TOP_DIR)/$(MICROPY_DIR)/
+MP_CFLAGS += -I$(TOP_DIR)/$(MICROPY_DIR)/drivers/memory/
 MP_CFLAGS += -I$(TOP_DIR)/$(MICROPY_DIR)/py/
 MP_CFLAGS += -I$(TOP_DIR)/$(MICROPY_DIR)/lib/mp-readline
 MP_CFLAGS += -I$(TOP_DIR)/$(MICROPY_DIR)/lib/oofatfs
@@ -311,7 +312,10 @@ FIRM_OBJ += $(addprefix $(BUILD)/$(MICROPY_DIR)/,\
 	machine_i2c.o           \
 	pybthread.o             \
 	mpthreadport.o          \
+	spibdev.o				\
 	)
+
+FIRM_OBJ += $(wildcard $(BUILD)/$(MICROPY_DIR)/boards/$(TARGET)/*.o)
 
 #------------- MicroPy Objects ----------------#
 FIRM_OBJ += $(addprefix $(BUILD)/$(MICROPY_DIR)/lib/,\
@@ -478,7 +482,9 @@ all: $(OPENMV)
 $(BUILD):
 	$(MKDIR) -p $@
 
-BOOTLOADER_OBJS: FIRMWARE_OBJS
+BOOTLOADER_OBJS:
+	$(MAKE)  -C $(CMSIS_DIR)                BUILD=$(BUILD)/$(CMSIS_DIR)    CFLAGS="$(CFLAGS) -fno-strict-aliasing -MMD"
+	$(MAKE)  -C $(STHAL_DIR)                BUILD=$(BUILD)/$(STHAL_DIR)    CFLAGS="$(CFLAGS) -MMD"
 	$(MAKE)  -C $(BOOTLDR_DIR)              BUILD=$(BUILD)/$(BOOTLDR_DIR)  CFLAGS="$(BOOTLDR_CFLAGS) -MMD"
 
 UVC_OBJS: FIRMWARE_OBJS
@@ -503,7 +509,7 @@ $(FIRMWARE): FIRMWARE_OBJS
 # This target generates the bootloader. The bootloader binary is generated twice,
 # once without padding, to generate the bootloader.dfu file, and once with padding
 # up to the main fw image (MAIN_APP_ADDR), to generate a contiguous firmware.bin image.
-$(BOOTLOADER): FIRMWARE_OBJS BOOTLOADER_OBJS
+$(BOOTLOADER): BOOTLOADER_OBJS
 	$(CPP) -P -E -I$(OMV_BOARD_CONFIG_DIR) $(BOOTLDR_DIR)/stm32fxxx.ld.S > $(BUILD)/$(BOOTLDR_DIR)/stm32fxxx.lds
 	$(CC) $(BOOTLDR_LDFLAGS) $(BOOT_OBJ) -o $(FW_DIR)/$(BOOTLOADER).elf
 	$(OBJCOPY) -Obinary $(FW_DIR)/$(BOOTLOADER).elf $(FW_DIR)/$(BOOTLOADER).bin

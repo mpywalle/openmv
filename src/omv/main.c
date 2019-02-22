@@ -459,7 +459,11 @@ soft_reset:
     spi_init0();
     uart_init0();
     MP_STATE_PORT(pyb_stdio_uart) = NULL; // need to zero
-    dac_init();
+
+    #if MICROPY_HW_ENABLE_DAC
+	dac_init();
+    #endif
+
     pyb_usb_init0();
     sensor_init0();
     fb_alloc_init0();
@@ -467,9 +471,16 @@ soft_reset:
     py_lcd_init0();
     py_fir_init0();
     py_tv_init0();
-    servo_init();
+
+    #if MICROPY_HW_ENABLE_SERVO
+	servo_init();
+    #endif
+
     usbdbg_init();
-    sdcard_init();
+
+    #if MICROPY_HW_HAS_SDCARD
+        sdcard_init();
+    #endif
 
     if (first_soft_reset) {
         rtc_init_start(false);
@@ -486,6 +497,7 @@ soft_reset:
     // Remove the BASEPRI masking (if any)
     irq_set_base_priority(0);
 
+    #if MICROPY_HW_HAS_SDCARD
     // Initialize storage
     if (sdcard_is_present()) {
         // Init the vfs object
@@ -502,6 +514,9 @@ soft_reset:
             pyb_usb_storage_medium = PYB_USB_STORAGE_MEDIUM_SDCARD;
         }
     }
+    #else 
+    sdcard_mounted = false;
+    #endif
 
     if (sdcard_mounted == false) {
         storage_init();
