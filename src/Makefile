@@ -42,6 +42,8 @@ MLX_DIR=mlx
 WINC1500_DIR=winc1500
 BOOTLDR_DIR=bootloader
 UVC_DIR=uvc
+MPY_DIR=$(MICROPY_DIR)/ports/stm32/modules
+FROZEN_MPY_DIR ?= modules
 
 # Additional qstr definitions for OpenMV
 OMV_QSTR_DEFS = $(TOP_DIR)/$(OMV_DIR)/py/qstrdefsomv.h
@@ -82,6 +84,20 @@ CFLAGS += -D$(MCU) -D$(CFLAGS_MCU) -D$(ARM_MATH) -DARM_MATH_DSP -DARM_NN_TRUNCAT
           -fsingle-precision-constant -Wdouble-promotion -mcpu=$(CPU) -mtune=$(CPU) -mfpu=$(FPU) -mfloat-abi=hard
 CFLAGS += -D__FPU_PRESENT=1 -D__VFP_FP__ -DUSE_USB_FS -DUSE_DEVICE_MODE -DUSE_USB_OTG_ID=0 -DHSE_VALUE=12000000\
           -D$(TARGET) -DSTM32_HAL_H=$(HAL_INC) -DVECT_TAB_OFFSET=$(VECT_TAB_OFFSET) -DMAIN_APP_ADDR=$(MAIN_APP_ADDR)
+
+ifneq ($(FROZEN_DIR),)
+# To use frozen source modules, put your .py files in a subdirectory (eg scripts/)
+# and then invoke make with FROZEN_DIR=scripts (be sure to build from scratch).
+CFLAGS += -DMICROPY_MODULE_FROZEN_STR
+endif
+
+ifneq ($(FROZEN_MPY_DIR),)
+# To use frozen bytecode, put your .py files in a subdirectory (eg frozen/) and
+# then invoke make with FROZEN_MPY_DIR=frozen (be sure to build from scratch).
+CFLAGS += -DMICROPY_QSTR_EXTRA_POOL=mp_qstr_frozen_const_pool
+CFLAGS += -DMICROPY_MODULE_FROZEN_MPY
+endif
+
 
 ST_CFLAGS += -I. -Iinclude
 ST_CFLAGS += -I$(TOP_DIR)/$(CMSIS_DIR)/include/
@@ -411,6 +427,10 @@ FIRM_OBJ += $(addprefix $(BUILD)/$(MICROPY_DIR)/drivers/,\
 	memory/spiflash.o   \
 	)
 
+FIRM_OBJ += $(addprefix $(BUILD)/,\
+	frozen_mpy.o		\
+	)
+
 # Bootloader object files
 BOOT_OBJ += $(wildcard $(BUILD)/$(BOOTLDR_DIR)/src/*.o)
 BOOT_OBJ += $(wildcard $(BUILD)/$(STHAL_DIR)/src/*.o)
@@ -458,6 +478,17 @@ UVC_OBJ += $(addprefix $(BUILD)/$(OMV_DIR)/img/,\
 
 UVC_OBJ += $(wildcard $(BUILD)/$(LEPTON_DIR)/src/*.o)
 UVC_OBJ += $(wildcard $(BUILD)/$(MLX_DIR)/src/*.o)
+
+MPYCROSS_OBJ += $(wildcard $(BUILD)/$(MICROPY_DIR)/py/*.o)
+MPYCROSS_OBJ += $(addprefix $(BUILD)/$(MICROPY_DIR)/mpy-cross/,\
+	main.o									\
+	gccollect.o								\
+	)
+MPYCROSS_OBJ += $(addprefix $(BUILD)/$(OMV_DIR)/, \
+	fb_alloc.o                              \
+	)
+
+
 ###################################################
 #Export Variables
 export Q
@@ -499,8 +530,11 @@ FIRMWARE_OBJS:
 	$(MAKE)  -C $(WINC1500_DIR)             BUILD=$(BUILD)/$(WINC1500_DIR) CFLAGS="$(CFLAGS) -MMD"
 	$(MAKE)  -C $(OMV_DIR)                  BUILD=$(BUILD)/$(OMV_DIR)      CFLAGS="$(CFLAGS) -MMD"
 
+MPYCROSS_OBJS:
+	$(MAKE)  -C $(MICROPY_DIR)/mpy-cross
+
 # This target generates the main/app firmware image located at 0x08010000
-$(FIRMWARE): FIRMWARE_OBJS
+$(FIRMWARE): FIRMWARE_OBJS MPYCROSS
 	$(CPP) -P -E -I$(OMV_BOARD_CONFIG_DIR) $(OMV_DIR)/stm32fxxx.ld.S > $(BUILD)/stm32fxxx.lds
 	$(CC) $(LDFLAGS) $(FIRM_OBJ) -o $(FW_DIR)/$(FIRMWARE).elf -lgcc
 	$(OBJCOPY) -Obinary $(FW_DIR)/$(FIRMWARE).elf $(FW_DIR)/$(FIRMWARE).bin
@@ -522,6 +556,27 @@ $(UVC): FIRMWARE_OBJS UVC_OBJS
 	$(CC) $(UVC_LDFLAGS) $(UVC_OBJ) -o $(FW_DIR)/$(UVC).elf
 	$(OBJCOPY) -Obinary $(FW_DIR)/$(UVC).elf $(FW_DIR)/$(UVC).bin
 	$(PYTHON) $(MKDFU) -b $(MAIN_APP_ADDR):$(FW_DIR)/$(UVC).bin $(FW_DIR)/$(UVC).dfu
+
+# make a list of all the .py files that need compiling and freezing
+MPY_PY_FILES = $(shell find -L $(MPY_DIR) -type f -name '*.py' | sed -e 's=^$(MPY_DIR)/==')
+MPY_MPY_FILES = $(addprefix $(BUILD)/mpy/,$(MPY_PY_FILES:.py=.mpy))
+
+MPY_TOOL = $(PYTHON) $(MICROPY_DIR)/tools/mpy-tool.py
+MPY_CROSS = $(MICROPY_DIR)/mpy-cross/mpy-cross
+
+# to build .mpy files from .py files
+$(BUILD)/mpy/%.mpy: $(MPY_DIR)/%.py MPYCROSS_OBJS
+	@$(ECHO) "MPY $<"
+	$(Q)$(MKDIR) -p $(dir $@)
+	$(Q)$(MPY_CROSS) -o $@ -s $(<:$(MPY_DIR)/%=%) $(MPY_CROSS_FLAGS) $<
+
+# to build frozen_mpy.c from all .mpy files
+$(BUILD)/frozen_mpy.c: $(MPY_MPY_FILES)
+	$(Q)$(MPY_TOOL) -f -q $(BUILD)/micropython/genhdr/qstrdefs.preprocessed.h $(MPY_MPY_FILES) > $@
+
+MPYCROSS: $(BUILD)/frozen_mpy.c
+	@$(ECHO) "CC $<"
+	$(Q)$(CC) $(CFLAGS) -c -MD -o $(BUILD)/frozen_mpy.o $<
 
 # This target generates a combined bootloader+main firmware image.
 $(OPENMV): $(BOOTLOADER) $(UVC) $(FIRMWARE) | $(BUILD)
