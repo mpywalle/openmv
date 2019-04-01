@@ -9,21 +9,28 @@ class Target():
         self.background = None
 
 class Ball(Target):
-    def __init__(self):
+    def __init__(self, size_thrs = 2000, color_thrs = (48, 78, -71, -30, 0, 53)):
         super(Ball, self).__init__()
-        self.size_threshold = 2000
-        self.color_threshold = (48, 78, -71, -30, 0, 53)
+        self.size_threshold = size_thrs
+        self.color_threshold = color_thrs
 
 class Car():
-    def __init__(self):
+    def __init__(self, xpid = PID(p=0.3, i=0.07, imax=10), ypid = PID(p=0.03, i=0.01, imax=20)):
         self.motor = DMotor()
         self.lmotor_speed = 0
         self.rmotor_speed = 0
-        self.x_pid = PID(p=0.3, i=0.07, imax=10)
-        self.h_pid = PID(p=0.03, i=0.01, imax=20)
+        self.x_pid = xpid
+        self.h_pid = ypid
+        self._setup()
 
-car = None
-ball = None
+    def _setup(self):
+        sensor.reset() # Initialize the camera sensor.
+        sensor.set_pixformat(sensor.RGB565) # use RGB565.
+        sensor.set_framesize(sensor.QVGA) # use QQVGA for speed.
+        sensor.skip_frames(10) # Let new settings take affect.
+        sensor.set_auto_whitebal(False) # turn this off.
+
+        return
 
 def find_max(blobs):
     max_size=0
@@ -33,16 +40,7 @@ def find_max(blobs):
             max_size = blob[2]*blob[3]
     return max_blob
 
-def setup():
-    sensor.reset() # Initialize the camera sensor.
-    sensor.set_pixformat(sensor.RGB565) # use RGB565.
-    sensor.set_framesize(sensor.QVGA) # use QQVGA for speed.
-    sensor.skip_frames(10) # Let new settings take affect.
-    sensor.set_auto_whitebal(False) # turn this off.
-
-    return
-
-def find_ball():
+def find_ball(ball):
     ball.background = sensor.snapshot() # Take a picture and return the image.
 
     blobs = ball.background.find_blobs([ball.color_threshold])
@@ -55,7 +53,7 @@ def find_ball():
         ball.is_found = False
     return
 
-def caculate_car_drive_profile():
+def caculate_car_drive_profile(ball, car):
     if ball.is_found:
         x_error = ball.obj.cx() - ball.background.width()/2
         h_error = ball.obj.pixels() - ball.size_threshold
@@ -70,9 +68,8 @@ def caculate_car_drive_profile():
         car.rmotor_speed = 0
 
 car = Car()
-ball = Ball()
-setup()
+ball = Ball(2000, (48, 78, -71, -30, 0, 53))
 while(True):
-    find_ball()
-    caculate_car_drive_profile()
+    find_ball(ball)
+    caculate_car_drive_profile(ball, car)
     car.motor.set_speed_v2(car.lmotor_speed, car.rmotor_speed)
