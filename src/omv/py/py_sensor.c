@@ -6,6 +6,7 @@
  * Sensor Python module.
  *
  */
+#include <stdarg.h>
 #include "mp.h"
 #include "pin.h"
 #include "sensor.h"
@@ -148,15 +149,17 @@ static mp_obj_t py_sensor_alloc_extra_fb(mp_obj_t w_obj, mp_obj_t h_obj, mp_obj_
             break;
     }
 
-    fb_alloc_mark();
-    img.pixels = fb_alloc0(image_size(&img));
-    return py_image_from_struct(&img);
+    // Alloc image first (could fail) then alloc RAM so that there's no leak on failure.
+    mp_obj_t r = py_image_from_struct(&img);
+    // Don't mark before on purpose.
+    ((image_t *) py_image_cobj(r))->pixels = fb_alloc0(image_size(&img));
+    return r;
 }
 
 static mp_obj_t py_sensor_dealloc_extra_fb()
 {
     fb_free();
-    fb_alloc_free_till_mark();
+    // Don't free till mark aftwards on purpose.
     return mp_const_none;
 }
 
@@ -198,7 +201,7 @@ static mp_obj_t py_sensor_set_framerate(mp_obj_t framerate) {
 
 static mp_obj_t py_sensor_set_framesize(mp_obj_t framesize) {
     if (sensor_set_framesize(mp_obj_get_int(framesize)) != 0) {
-        return mp_const_false;
+        nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "Failed to set framesize!"));
     }
     return mp_const_true;
 }
@@ -406,6 +409,182 @@ static mp_obj_t py_sensor_set_vsync_output(mp_obj_t pin_obj) {
     return mp_const_true;
 }
 
+static mp_obj_t py_sensor_ioctl(uint n_args, const mp_obj_t *args)
+{
+    mp_obj_t ret_obj = mp_const_none;
+    int request = mp_obj_get_int(args[0]);
+
+    switch (request) {
+        case IOCTL_SET_TRIGGERED_MODE:
+            if (n_args < 2 || sensor_ioctl(request, mp_obj_get_int(args[1])) != 0) {
+                nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "Sensor control failed!"));
+            }
+            break;
+
+        case IOCTL_GET_TRIGGERED_MODE: {
+            int enabled;
+            if (sensor_ioctl(request, &enabled) != 0) {
+                nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "Sensor control failed!"));
+            }
+            ret_obj = mp_obj_new_bool(enabled);
+            break;
+        }
+
+        case IOCTL_LEPTON_GET_WIDTH: {
+            int width;
+            if (sensor_ioctl(request, &width) != 0) {
+                nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "Sensor control failed!"));
+            }
+            ret_obj = mp_obj_new_int(width);
+            break;
+        }
+
+        case IOCTL_LEPTON_GET_HEIGHT: {
+            int height;
+            if (sensor_ioctl(request, &height) != 0) {
+                nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "Sensor control failed!"));
+            }
+            ret_obj = mp_obj_new_int(height);
+            break;
+        }
+
+        case IOCTL_LEPTON_GET_RADIOMETRY: {
+            int radiometry;
+            if (sensor_ioctl(request, &radiometry) != 0) {
+                nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "Sensor control failed!"));
+            }
+            ret_obj = mp_obj_new_int(radiometry);
+            break;
+        }
+
+        case IOCTL_LEPTON_GET_REFRESH: {
+            int refresh;
+            if (sensor_ioctl(request, &refresh) != 0) {
+                nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "Sensor control failed!"));
+            }
+            ret_obj = mp_obj_new_int(refresh);
+            break;
+        }
+
+        case IOCTL_LEPTON_GET_RESOLUTION: {
+            int resolution;
+            if (sensor_ioctl(request, &resolution) != 0) {
+                nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "Sensor control failed!"));
+            }
+            ret_obj = mp_obj_new_int(resolution);
+            break;
+        }
+
+        case IOCTL_LEPTON_RUN_COMMAND: {
+            if (n_args < 2 || sensor_ioctl(request, mp_obj_get_int(args[1])) != 0) {
+                nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "Sensor control failed!"));
+            }
+            break;
+        }
+
+        case IOCTL_LEPTON_SET_ATTRIBUTE: {
+            size_t data_len;
+            int command = mp_obj_get_int(args[1]);
+            uint16_t *data = (uint16_t *) mp_obj_str_get_data(args[2], &data_len);
+            PY_ASSERT_TRUE_MSG(data_len > 0, "0 bytes transferred!");
+            if (sensor_ioctl(request, command, data, data_len / sizeof(uint16_t)) != 0) {
+                nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "Sensor control failed!"));
+            }
+            break;
+        }
+
+        case IOCTL_LEPTON_GET_ATTRIBUTE: {
+            int command = mp_obj_get_int(args[1]);
+            size_t data_len = mp_obj_get_int(args[2]);
+            PY_ASSERT_TRUE_MSG(data_len > 0, "0 bytes transferred!");
+            uint16_t *data = xalloc(data_len * sizeof(uint16_t));
+            if (sensor_ioctl(request, command, data, data_len) != 0) {
+                nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "Sensor control failed!"));
+            }
+            ret_obj = mp_obj_new_bytearray_by_ref(data_len * sizeof(uint16_t), data);
+            break;
+        }
+
+        case IOCTL_LEPTON_GET_FPA_TEMPERATURE:
+        case IOCTL_LEPTON_GET_AUX_TEMPERATURE: {
+            int temp;
+            if (sensor_ioctl(request, &temp) != 0) {
+                nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "Sensor control failed!"));
+            }
+            ret_obj = mp_obj_new_float((((float) temp) / 100) - 273.15f);
+            break;
+        }
+
+        case IOCTL_LEPTON_SET_MEASUREMENT_MODE:
+            if (n_args < 2 || sensor_ioctl(request, mp_obj_get_int(args[1])) != 0) {
+                nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "Sensor control failed!"));
+            }
+            break;
+
+        case IOCTL_LEPTON_GET_MEASUREMENT_MODE: {
+            int enabled;
+            if (sensor_ioctl(request, &enabled) != 0) {
+                nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "Sensor control failed!"));
+            }
+            ret_obj = mp_obj_new_bool(enabled);
+            break;
+        }
+
+        case IOCTL_LEPTON_SET_MEASUREMENT_RANGE:
+            if (n_args < 3) {
+                nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "Sensor control failed!"));
+            }
+            // GCC will not less us pass floats to ... so we have to pass float pointers instead.
+            float min = mp_obj_get_float(args[1]);
+            float max = mp_obj_get_float(args[2]);
+            if (sensor_ioctl(request, &min, &max) != 0) {
+                nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "Sensor control failed!"));
+            }
+            break;
+
+        case IOCTL_LEPTON_GET_MEASUREMENT_RANGE: {
+            float min, max;
+            if (sensor_ioctl(request, &min, &max) != 0) {
+                nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "Sensor control failed!"));
+            }
+            ret_obj = mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_float(min), mp_obj_new_float(max)});
+            break;
+        }
+
+        default: {
+            nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "Operation not supported!"));
+            break;
+        }
+    }
+    return ret_obj;
+}
+
+static mp_obj_t py_sensor_set_color_palette(mp_obj_t palette_obj) {
+    int palette = mp_obj_get_int(palette_obj);
+    switch (palette) {
+        case COLOR_PALETTE_RAINBOW:
+            sensor_set_color_palette(rainbow_table);
+            break;
+        case COLOR_PALETTE_IRONBOW:
+            sensor_set_color_palette(ironbow_table);
+            break;
+        default:
+            nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "Invalid color palette!"));
+            break;
+    }
+    return mp_const_none;
+}
+
+static mp_obj_t py_sensor_get_color_palette() {
+    const uint16_t *palette = sensor_get_color_palette();
+    if (palette == rainbow_table) {
+        return mp_obj_new_int(COLOR_PALETTE_RAINBOW);
+    } else if (palette == ironbow_table) {
+        return mp_obj_new_int(COLOR_PALETTE_IRONBOW);
+    }
+    return mp_const_none;
+}
+
 static mp_obj_t py_sensor_write_reg(mp_obj_t addr, mp_obj_t val) {
     sensor_write_reg(mp_obj_get_int(addr), mp_obj_get_int(val));
     return mp_const_none;
@@ -453,6 +632,9 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_sensor_set_vflip_obj,           py_sensor_se
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_sensor_set_special_effect_obj,  py_sensor_set_special_effect);
 STATIC MP_DEFINE_CONST_FUN_OBJ_3(py_sensor_set_lens_correction_obj, py_sensor_set_lens_correction);
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_sensor_set_vsync_output_obj,    py_sensor_set_vsync_output);
+STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(py_sensor_ioctl_obj, 1, 5, py_sensor_ioctl);
+STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_sensor_set_color_palette_obj,   py_sensor_set_color_palette);
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(py_sensor_get_color_palette_obj,   py_sensor_get_color_palette);
 STATIC MP_DEFINE_CONST_FUN_OBJ_2(py_sensor_write_reg_obj,           py_sensor_write_reg);
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_sensor_read_reg_obj,            py_sensor_read_reg);
 
@@ -504,6 +686,28 @@ STATIC const mp_map_elem_t globals_dict_table[] = {
     { MP_OBJ_NEW_QSTR(MP_QSTR_SXGA),                MP_OBJ_NEW_SMALL_INT(FRAMESIZE_SXGA)},     /* 1280x1024 */
     { MP_OBJ_NEW_QSTR(MP_QSTR_UXGA),                MP_OBJ_NEW_SMALL_INT(FRAMESIZE_UXGA)},     /* 1600x1200 */
 
+    // Color Palettes
+    { MP_OBJ_NEW_QSTR(MP_QSTR_PALETTE_RAINBOW),     MP_OBJ_NEW_SMALL_INT(COLOR_PALETTE_RAINBOW)},
+    { MP_OBJ_NEW_QSTR(MP_QSTR_PALETTE_IRONBOW),     MP_OBJ_NEW_SMALL_INT(COLOR_PALETTE_IRONBOW)},
+
+    // IOCTLs
+    { MP_OBJ_NEW_QSTR(MP_QSTR_IOCTL_SET_TRIGGERED_MODE),            MP_OBJ_NEW_SMALL_INT(IOCTL_SET_TRIGGERED_MODE)},
+    { MP_OBJ_NEW_QSTR(MP_QSTR_IOCTL_GET_TRIGGERED_MODE),            MP_OBJ_NEW_SMALL_INT(IOCTL_GET_TRIGGERED_MODE)},
+    { MP_OBJ_NEW_QSTR(MP_QSTR_IOCTL_LEPTON_GET_WIDTH),              MP_OBJ_NEW_SMALL_INT(IOCTL_LEPTON_GET_WIDTH)},
+    { MP_OBJ_NEW_QSTR(MP_QSTR_IOCTL_LEPTON_GET_HEIGHT),             MP_OBJ_NEW_SMALL_INT(IOCTL_LEPTON_GET_HEIGHT)},
+    { MP_OBJ_NEW_QSTR(MP_QSTR_IOCTL_LEPTON_GET_RADIOMETRY),         MP_OBJ_NEW_SMALL_INT(IOCTL_LEPTON_GET_RADIOMETRY)},
+    { MP_OBJ_NEW_QSTR(MP_QSTR_IOCTL_LEPTON_GET_REFRESH),            MP_OBJ_NEW_SMALL_INT(IOCTL_LEPTON_GET_REFRESH)},
+    { MP_OBJ_NEW_QSTR(MP_QSTR_IOCTL_LEPTON_GET_RESOLUTION),         MP_OBJ_NEW_SMALL_INT(IOCTL_LEPTON_GET_RESOLUTION)},
+    { MP_OBJ_NEW_QSTR(MP_QSTR_IOCTL_LEPTON_RUN_COMMAND),            MP_OBJ_NEW_SMALL_INT(IOCTL_LEPTON_RUN_COMMAND)},
+    { MP_OBJ_NEW_QSTR(MP_QSTR_IOCTL_LEPTON_SET_ATTRIBUTE),          MP_OBJ_NEW_SMALL_INT(IOCTL_LEPTON_SET_ATTRIBUTE)},
+    { MP_OBJ_NEW_QSTR(MP_QSTR_IOCTL_LEPTON_GET_ATTRIBUTE),          MP_OBJ_NEW_SMALL_INT(IOCTL_LEPTON_GET_ATTRIBUTE)},
+    { MP_OBJ_NEW_QSTR(MP_QSTR_IOCTL_LEPTON_GET_FPA_TEMPERATURE),    MP_OBJ_NEW_SMALL_INT(IOCTL_LEPTON_GET_FPA_TEMPERATURE)},
+    { MP_OBJ_NEW_QSTR(MP_QSTR_IOCTL_LEPTON_GET_AUX_TEMPERATURE),    MP_OBJ_NEW_SMALL_INT(IOCTL_LEPTON_GET_AUX_TEMPERATURE)},
+    { MP_OBJ_NEW_QSTR(MP_QSTR_IOCTL_LEPTON_SET_MEASUREMENT_MODE),   MP_OBJ_NEW_SMALL_INT(IOCTL_LEPTON_SET_MEASUREMENT_MODE)},
+    { MP_OBJ_NEW_QSTR(MP_QSTR_IOCTL_LEPTON_GET_MEASUREMENT_MODE),   MP_OBJ_NEW_SMALL_INT(IOCTL_LEPTON_GET_MEASUREMENT_MODE)},
+    { MP_OBJ_NEW_QSTR(MP_QSTR_IOCTL_LEPTON_SET_MEASUREMENT_RANGE),  MP_OBJ_NEW_SMALL_INT(IOCTL_LEPTON_SET_MEASUREMENT_RANGE)},
+    { MP_OBJ_NEW_QSTR(MP_QSTR_IOCTL_LEPTON_GET_MEASUREMENT_RANGE),  MP_OBJ_NEW_SMALL_INT(IOCTL_LEPTON_GET_MEASUREMENT_RANGE)},
+
     // Sensor functions
     { MP_OBJ_NEW_QSTR(MP_QSTR_reset),               (mp_obj_t)&py_sensor_reset_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_sleep),               (mp_obj_t)&py_sensor_sleep_obj },
@@ -538,6 +742,9 @@ STATIC const mp_map_elem_t globals_dict_table[] = {
     { MP_OBJ_NEW_QSTR(MP_QSTR_set_special_effect),  (mp_obj_t)&py_sensor_set_special_effect_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_set_lens_correction), (mp_obj_t)&py_sensor_set_lens_correction_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_set_vsync_output),    (mp_obj_t)&py_sensor_set_vsync_output_obj },
+    { MP_OBJ_NEW_QSTR(MP_QSTR_ioctl),               (mp_obj_t)&py_sensor_ioctl_obj },
+    { MP_OBJ_NEW_QSTR(MP_QSTR_set_color_palette),   (mp_obj_t)&py_sensor_set_color_palette_obj },
+    { MP_OBJ_NEW_QSTR(MP_QSTR_get_color_palette),   (mp_obj_t)&py_sensor_get_color_palette_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR___write_reg),         (mp_obj_t)&py_sensor_write_reg_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR___read_reg),          (mp_obj_t)&py_sensor_read_reg_obj },
 };

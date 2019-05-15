@@ -39,18 +39,23 @@
 #define VOSPI_FIRST_PACKET      (0)
 #define VOSPI_FIRST_SEGMENT     (1)
 #define LEPTON_TIMEOUT          (1000)
+#define DEFAULT_MIN_TEMP        (-17.7778f)
+#define DEFAULT_MAX_TEMP        (37.7778f)
 
+static bool radiometry = false;
 static int h_res = 0;
 static int v_res = 0;
-static bool h_mirror = false;
 static bool v_flip = false;
+static bool h_mirror = false;
+static bool measurement_mode = false;
+static float min_temp = DEFAULT_MIN_TEMP;
+static float max_temp = DEFAULT_MAX_TEMP;
 
 static SPI_HandleTypeDef SPIHandle;
 static DMA_HandleTypeDef DMAHandle;
-
+LEP_CAMERA_PORT_DESC_T   LEPHandle;
 extern uint8_t _line_buf;
 extern uint8_t _vospi_buf;
-extern const uint16_t rainbow_table[256];
 
 static bool vospi_resync = true;
 static uint8_t *vospi_packet = &_line_buf;
@@ -58,6 +63,7 @@ static uint8_t *vospi_buffer = &_vospi_buf;
 static volatile uint32_t vospi_pid = 0;
 static volatile uint32_t vospi_seg = 1;
 static uint32_t vospi_packets = 60;
+static int lepton_reset(sensor_t *sensor, bool measurement_mode);
 
 void LEPTON_SPI_IRQHandler(void)
 {
@@ -125,7 +131,7 @@ static int write_reg(sensor_t *sensor, uint8_t reg_addr, uint16_t reg_data)
 
 static int set_pixformat(sensor_t *sensor, pixformat_t pixformat)
 {
-    return 0;
+    return ((pixformat != PIXFORMAT_GRAYSCALE) && (pixformat != PIXFORMAT_RGB565)) ? - 1 : 0;
 }
 
 static int set_framesize(sensor_t *sensor, framesize_t framesize)
@@ -220,7 +226,111 @@ static int set_lens_correction(sensor_t *sensor, int enable, int radi, int coef)
     return 0;
 }
 
-static int reset(sensor_t *sensor)
+static int ioctl(sensor_t *sensor, int request, va_list ap)
+{
+    int ret = 0;
+
+    if ((!h_res) || (!v_res)) {
+        return -1;
+    }
+
+    switch (request) {
+        case IOCTL_LEPTON_GET_WIDTH: {
+            int *width = va_arg(ap, int *);
+            *width = h_res;
+            break;
+        }
+        case IOCTL_LEPTON_GET_HEIGHT: {
+            int *height = va_arg(ap, int *);
+            *height = v_res;
+            break;
+        }
+        case IOCTL_LEPTON_GET_RADIOMETRY: {
+            int *type = va_arg(ap, int *);
+            *type = radiometry;
+            break;
+        }
+        case IOCTL_LEPTON_GET_REFRESH: {
+            int *refresh = va_arg(ap, int *);
+            *refresh = (h_res == 80) ? 27 : 9;
+            break;
+        }
+        case IOCTL_LEPTON_GET_RESOLUTION: {
+            int *resolution = va_arg(ap, int *);
+            *resolution = 14;
+            break;
+        }
+        case IOCTL_LEPTON_RUN_COMMAND: {
+            int command = va_arg(ap, int);
+            ret = (LEP_RunCommand(&LEPHandle, command) == LEP_OK) ? 0 : -1;
+            break;
+        }
+        case IOCTL_LEPTON_SET_ATTRIBUTE: {
+            int command = va_arg(ap, int);
+            uint16_t *data = va_arg(ap, uint16_t *);
+            size_t data_len = va_arg(ap, size_t);
+            ret = (LEP_SetAttribute(&LEPHandle, command, (LEP_ATTRIBUTE_T_PTR) data, data_len) == LEP_OK) ? 0 : -1;
+            break;
+        }
+        case IOCTL_LEPTON_GET_ATTRIBUTE: {
+            int command = va_arg(ap, int);
+            uint16_t *data = va_arg(ap, uint16_t *);
+            size_t data_len = va_arg(ap, size_t);
+            ret = (LEP_GetAttribute(&LEPHandle, command, (LEP_ATTRIBUTE_T_PTR) data, data_len) == LEP_OK) ? 0 : -1;
+            break;
+        }
+        case IOCTL_LEPTON_GET_FPA_TEMPERATURE: {
+            int *temp = va_arg(ap, int *);
+            LEP_SYS_FPA_TEMPERATURE_KELVIN_T tfpa;
+            ret = (LEP_GetSysFpaTemperatureKelvin(&LEPHandle, &tfpa) == LEP_OK) ? 0 : -1;
+            *temp = tfpa;
+            break;
+        }
+        case IOCTL_LEPTON_GET_AUX_TEMPERATURE: {
+            int *temp = va_arg(ap, int *);
+            LEP_SYS_AUX_TEMPERATURE_KELVIN_T taux;
+            ret = (LEP_GetSysAuxTemperatureKelvin(&LEPHandle, &taux) == LEP_OK) ? 0 : -1;
+            *temp = taux;
+            break;
+        }
+        case IOCTL_LEPTON_SET_MEASUREMENT_MODE: {
+            int enabled = va_arg(ap, int);
+            if (measurement_mode != enabled) {
+                measurement_mode = enabled;
+                ret = lepton_reset(sensor, measurement_mode);
+            }
+            break;
+        }
+        case IOCTL_LEPTON_GET_MEASUREMENT_MODE: {
+            bool *enabled = va_arg(ap, bool *);
+            *enabled = measurement_mode;
+            break;
+        }
+        case IOCTL_LEPTON_SET_MEASUREMENT_RANGE: {
+            float *arg_min_temp = va_arg(ap, float *);
+            float *arg_max_temp = va_arg(ap, float *);
+            min_temp = IM_MAX(IM_MIN(*arg_min_temp, *arg_max_temp), -10.0f);
+            max_temp = IM_MIN(IM_MAX(*arg_max_temp, *arg_min_temp), 140.0f);
+            break;
+        }
+        case IOCTL_LEPTON_GET_MEASUREMENT_RANGE: {
+            float *ptr_min_temp = va_arg(ap, float *);
+            float *ptr_max_temp = va_arg(ap, float *);
+            *ptr_min_temp = min_temp;
+            *ptr_max_temp = max_temp;
+            break;
+        }
+        default: {
+            ret = -1;
+            break;
+        }
+    }
+
+    return ret;
+}
+
+
+static int lepton_reset(sensor_t *sensor, bool measurement_mode)
 {
     DCMI_PWDN_LOW();
     systick_sleep(10);
@@ -234,12 +344,12 @@ static int reset(sensor_t *sensor)
     DCMI_RESET_HIGH();
     systick_sleep(1000);
 
+    LEP_RAD_ENABLE_E rad;
     LEP_AGC_ROI_T roi;
-    LEP_CAMERA_PORT_DESC_T handle = {0};
-    h_res = v_res = h_mirror = v_flip = 0;
+    memset(&LEPHandle, 0, sizeof(LEP_CAMERA_PORT_DESC_T));
 
     for (uint32_t start = HAL_GetTick(); ;systick_sleep(1)) {
-        if (LEP_OpenPort(0, LEP_CCI_TWI, 0, &handle) == LEP_OK) {
+        if (LEP_OpenPort(0, LEP_CCI_TWI, 0, &LEPHandle) == LEP_OK) {
             break;
         }
         if (HAL_GetTick() - start >= LEPTON_TIMEOUT) {
@@ -249,7 +359,7 @@ static int reset(sensor_t *sensor)
 
     for (uint32_t start = HAL_GetTick(); ;systick_sleep(1)) {
         LEP_SDK_BOOT_STATUS_E status;
-        if (LEP_GetCameraBootStatus(&handle, &status) != LEP_OK) {
+        if (LEP_GetCameraBootStatus(&LEPHandle, &status) != LEP_OK) {
             return -1;
         }
         if (status == LEP_BOOT_STATUS_BOOTED) {
@@ -262,7 +372,7 @@ static int reset(sensor_t *sensor)
 
     for (uint32_t start = HAL_GetTick(); ;systick_sleep(1)) {
         LEP_UINT16 status;
-        if (LEP_DirectReadRegister(&handle, LEP_I2C_STATUS_REG, &status) != LEP_OK) {
+        if (LEP_DirectReadRegister(&LEPHandle, LEP_I2C_STATUS_REG, &status) != LEP_OK) {
             return -1;
         }
         if (!(status & LEP_I2C_STATUS_BUSY_BIT_MASK)) {
@@ -273,28 +383,22 @@ static int reset(sensor_t *sensor)
         }
     }
 
-    for (uint32_t start = HAL_GetTick(); ;systick_sleep(1)) {
-        LEP_SYS_STATUS_E status;
-        if (LEP_GetSysFFCStatus(&handle, &status) != LEP_OK) {
-            return -1;
-        }
-        if (status == LEP_SYS_STATUS_READY) {
-            break;
-        }
-        if (HAL_GetTick() - start >= (LEPTON_TIMEOUT * 5)) {
-            return -1;
-        }
+    if (LEP_GetRadEnableState(&LEPHandle, &rad) != LEP_OK
+        || LEP_GetAgcROI(&LEPHandle, &roi) != LEP_OK) {
+        return -1;
     }
 
-    if (LEP_SetRadEnableState(&handle, LEP_RAD_DISABLE) != LEP_OK
-        || LEP_GetAgcROI(&handle, &roi) != LEP_OK
-        || LEP_SetAgcEnableState(&handle, LEP_AGC_ENABLE) != LEP_OK
-        || LEP_SetAgcCalcEnableState(&handle, LEP_AGC_ENABLE) != LEP_OK) {
-        return -1;
+    if (!measurement_mode) {
+        if (LEP_SetRadEnableState(&LEPHandle, LEP_RAD_DISABLE) != LEP_OK
+            || LEP_SetAgcEnableState(&LEPHandle, LEP_AGC_ENABLE) != LEP_OK
+            || LEP_SetAgcCalcEnableState(&LEPHandle, LEP_AGC_ENABLE) != LEP_OK) {
+            return -1;
+        }
     }
 
     h_res = roi.endCol + 1;
     v_res = roi.endRow + 1;
+    radiometry = (rad == LEP_RAD_ENABLE);
 
     if (v_res > 60) {
         vospi_packets = 240;
@@ -305,6 +409,19 @@ static int reset(sensor_t *sensor)
     // resync and enable DMA before the first snapshot.
     vospi_resync = true;
     return 0;
+}
+
+static int reset(sensor_t *sensor)
+{
+    h_res = 0;
+    v_res = 0;
+    v_flip = false;
+    h_mirror = false;
+    radiometry = false;
+    measurement_mode = false;
+    min_temp = DEFAULT_MIN_TEMP;
+    max_temp = DEFAULT_MAX_TEMP;
+    return lepton_reset(sensor, false);
 }
 
 void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef *hspi)
@@ -368,6 +485,10 @@ static int snapshot(sensor_t *sensor, image_t *image, streaming_cb_t streaming_c
         vospi_seg = VOSPI_FIRST_SEGMENT;
         HAL_NVIC_EnableIRQ(LEPTON_SPI_DMA_IRQn);
 
+        // Snapshot start tick
+        uint32_t tick_start = HAL_GetTick();
+        bool reset_tried = false;
+
         do {
             if (vospi_resync == true) {
                 lepton_sync();
@@ -379,18 +500,42 @@ static int snapshot(sensor_t *sensor, image_t *image, streaming_cb_t streaming_c
             } else {
                 __WFI();
             }
+            if ((HAL_GetTick() - tick_start) >= 20000) {
+                // Timeout error.
+                return -1;
+            }
+            if ((!reset_tried) && ((HAL_GetTick() - tick_start) >= 10000)) {
+                reset_tried = true;
+
+                // The FLIR lepton might have crashed so reset it (it does this).
+                bool temp_h_mirror = h_mirror;
+                bool temp_v_flip = v_flip;
+                int ret = lepton_reset(sensor, measurement_mode);
+                h_mirror = temp_h_mirror;
+                v_flip = temp_v_flip;
+
+                if (ret < 0) {
+                    return -1;
+                }
+
+                // Reset the VOSPI interface again.
+                HAL_NVIC_DisableIRQ(LEPTON_SPI_DMA_IRQn);
+                vospi_pid = VOSPI_FIRST_PACKET;
+                vospi_seg = VOSPI_FIRST_SEGMENT;
+                HAL_NVIC_EnableIRQ(LEPTON_SPI_DMA_IRQn);
+            }
         } while (vospi_pid < vospi_packets); // only checking one volatile var so atomic.
 
         MAIN_FB()->w = MAIN_FB()->u;
         MAIN_FB()->h = MAIN_FB()->v;
 
         switch (sensor->pixformat) {
-            case PIXFORMAT_RGB565: {
-                MAIN_FB()->bpp = sizeof(uint16_t);
+            case PIXFORMAT_GRAYSCALE: {
+                MAIN_FB()->bpp = IMAGE_BPP_GRAYSCALE;
                 break;
             }
-            case PIXFORMAT_GRAYSCALE: {
-                MAIN_FB()->bpp = sizeof(uint8_t);
+            case PIXFORMAT_RGB565: {
+                MAIN_FB()->bpp = IMAGE_BPP_RGB565;
                 break;
             }
             default: {
@@ -414,6 +559,13 @@ static int snapshot(sensor_t *sensor, image_t *image, streaming_cb_t streaming_c
         // The code below upscales the source image to the requested frame size
         // and then crops it to the window set by the user.
 
+        LEP_SYS_FPA_TEMPERATURE_KELVIN_T kelvin;
+        if (measurement_mode && (!radiometry)) {
+            if (LEP_GetSysFpaTemperatureKelvin(&LEPHandle, &kelvin) != LEP_OK) {
+                return -1;
+            }
+        }
+
         for (int y = y_offset, yy = fast_ceilf(v_res * scale) + y_offset; y < yy; y++) {
             if ((MAIN_FB()->y <= y) && (y < (MAIN_FB()->y + MAIN_FB()->v))) { // user window cropping
 
@@ -422,9 +574,17 @@ static int snapshot(sensor_t *sensor, image_t *image, streaming_cb_t streaming_c
                 for (int x = x_offset, xx = fast_ceilf(h_res * scale) + x_offset; x < xx; x++) {
                     if ((MAIN_FB()->x <= x) && (x < (MAIN_FB()->x + MAIN_FB()->u))) { // user window cropping
 
-                        // Value is the 14-bit value from the FLIR IR camera.
+                        // Value is the 14/16-bit value from the FLIR IR camera.
                         // However, with AGC enabled only the bottom 8-bits are non-zero.
-                        int value = __REV16(row_ptr[fast_floorf(x * scale_inv)]) & 0x3FFF;
+                        int value = __REV16(row_ptr[fast_floorf(x * scale_inv)]);
+
+                        if (measurement_mode) {
+                            // Need to convert 14/16-bits to 8-bits ourselves...
+                            if (!radiometry) value = (value - 8192) + kelvin;
+                            float celsius = (value * 0.01f) - 273.15f;
+                            celsius = IM_MAX(IM_MIN(celsius, max_temp), min_temp);
+                            value = IM_MAX(IM_MIN(IM_DIV(((celsius - min_temp) * 255), (max_temp - min_temp)), 255), 0);
+                        }
 
                         int t_x = x - MAIN_FB()->x;
                         int t_y = y - MAIN_FB()->y;
@@ -433,12 +593,12 @@ static int snapshot(sensor_t *sensor, image_t *image, streaming_cb_t streaming_c
                         if (v_flip) t_y = MAIN_FB()->v - t_y - 1;
 
                         switch (sensor->pixformat) {
-                            case PIXFORMAT_RGB565: {
-                                IMAGE_PUT_RGB565_PIXEL(image, t_x, t_y, rainbow_table[value & 0xFF]);
-                                break;
-                            }
                             case PIXFORMAT_GRAYSCALE: {
                                 IMAGE_PUT_GRAYSCALE_PIXEL(image, t_x, t_y, value & 0xFF);
+                                break;
+                            }
+                            case PIXFORMAT_RGB565: {
+                                IMAGE_PUT_RGB565_PIXEL(image, t_x, t_y, sensor->color_palette[value & 0xFF]);
                                 break;
                             }
                             default: {
@@ -482,6 +642,7 @@ int lepton_init(sensor_t *sensor)
     sensor->set_hmirror         = set_hmirror;
     sensor->set_vflip           = set_vflip;
     sensor->set_lens_correction = set_lens_correction;
+    sensor->ioctl               = ioctl;
 
     SENSOR_HW_FLAGS_SET(sensor, SENSOR_HW_FLAGS_VSYNC, 1);
     SENSOR_HW_FLAGS_SET(sensor, SENSOR_HW_FLAGS_HSYNC, 0);

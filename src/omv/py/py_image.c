@@ -790,7 +790,6 @@ static mp_obj_t py_image_to_bitmap(uint n_args, const mp_obj_t *args, mp_map_t *
                 memcpy(IMAGE_COMPUTE_BINARY_PIXEL_ROW_PTR(&out, y),
                        out_row_ptr, IMAGE_BINARY_LINE_LEN_BYTES(&out));
             }
-            fb_free();
             fb_alloc_free_till_mark();
             break;
         }
@@ -826,7 +825,6 @@ static mp_obj_t py_image_to_bitmap(uint n_args, const mp_obj_t *args, mp_map_t *
                 memcpy(IMAGE_COMPUTE_BINARY_PIXEL_ROW_PTR(&out, y),
                        out_row_ptr, IMAGE_BINARY_LINE_LEN_BYTES(&out));
             }
-            fb_free();
             fb_alloc_free_till_mark();
             break;
         }
@@ -896,7 +894,6 @@ static mp_obj_t py_image_to_grayscale(uint n_args, const mp_obj_t *args, mp_map_
                     }
                 }
 
-                fb_free();
                 fb_alloc_free_till_mark();
             }
             break;
@@ -1000,7 +997,6 @@ static mp_obj_t py_image_to_rgb565(uint n_args, const mp_obj_t *args, mp_map_t *
                     }
                 }
 
-                fb_free();
                 fb_alloc_free_till_mark();
             }
             break;
@@ -1041,7 +1037,6 @@ static mp_obj_t py_image_to_rgb565(uint n_args, const mp_obj_t *args, mp_map_t *
                     }
                 }
 
-                fb_free();
                 fb_alloc_free_till_mark();
             }
             break;
@@ -1091,13 +1086,21 @@ static mp_obj_t py_image_to_rgb565(uint n_args, const mp_obj_t *args, mp_map_t *
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_to_rgb565_obj, 1, py_image_to_rgb565);
 
-extern const uint16_t rainbow_table[256];
-
 static mp_obj_t py_image_to_rainbow(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
 {
     image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
     bool copy = py_helper_keyword_int(n_args, args, 1, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_copy), false);
     int channel = py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_rgb_channel), -1);
+    int palette = py_helper_keyword_int(n_args, args, 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_color_palette), COLOR_PALETTE_RAINBOW);
+    const uint16_t *color_palette = NULL;
+
+    if (palette == COLOR_PALETTE_RAINBOW) {
+        color_palette = rainbow_table;
+    } else if (palette == COLOR_PALETTE_IRONBOW) {
+        color_palette = ironbow_table;
+    } else {
+        nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "Invalid color palette!"));
+    }
 
     image_t out;
     out.w = arg_img->w;
@@ -1115,7 +1118,7 @@ static mp_obj_t py_image_to_rainbow(uint n_args, const mp_obj_t *args, mp_map_t 
                     uint16_t *out_row_ptr = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(&out, y);
                     for (int x = 0, xx = out.w; x < xx; x++) {
                         IMAGE_PUT_RGB565_PIXEL_FAST(out_row_ptr, x,
-                            rainbow_table[IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, x) * COLOR_GRAYSCALE_MAX]);
+                            color_palette[IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, x) * COLOR_GRAYSCALE_MAX]);
                     }
                 }
             } else {
@@ -1138,11 +1141,10 @@ static mp_obj_t py_image_to_rainbow(uint n_args, const mp_obj_t *args, mp_map_t 
                     uint16_t *out_row_ptr = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(&out, y);
                     for (int x = 0, xx = out.w; x < xx; x++) {
                         IMAGE_PUT_RGB565_PIXEL_FAST(out_row_ptr, x,
-                            rainbow_table[IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, x) * COLOR_GRAYSCALE_MAX]);
+                            color_palette[IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, x) * COLOR_GRAYSCALE_MAX]);
                     }
                 }
 
-                fb_free();
                 fb_alloc_free_till_mark();
             }
             break;
@@ -1156,7 +1158,7 @@ static mp_obj_t py_image_to_rainbow(uint n_args, const mp_obj_t *args, mp_map_t 
                     uint16_t *out_row_ptr = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(&out, y);
                     for (int x = 0, xx = out.w; x < xx; x++) {
                         IMAGE_PUT_RGB565_PIXEL_FAST(out_row_ptr, x,
-                            rainbow_table[IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, x)]);
+                            color_palette[IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, x)]);
                     }
                 }
             } else {
@@ -1179,11 +1181,10 @@ static mp_obj_t py_image_to_rainbow(uint n_args, const mp_obj_t *args, mp_map_t 
                     uint16_t *out_row_ptr = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(&out, y);
                     for (int x = 0, xx = out.w; x < xx; x++) {
                         IMAGE_PUT_RGB565_PIXEL_FAST(out_row_ptr, x,
-                            rainbow_table[IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, x)]);
+                            color_palette[IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, x)]);
                     }
                 }
 
-                fb_free();
                 fb_alloc_free_till_mark();
             }
             break;
@@ -1196,19 +1197,19 @@ static mp_obj_t py_image_to_rainbow(uint n_args, const mp_obj_t *args, mp_map_t 
                     int pixel = IMAGE_GET_RGB565_PIXEL_FAST(row_ptr, x);
                     switch (channel) {
                         case 0: {
-                            pixel = rainbow_table[COLOR_RGB565_TO_R8(pixel)];
+                            pixel = color_palette[COLOR_RGB565_TO_R8(pixel)];
                             break;
                         }
                         case 1: {
-                            pixel = rainbow_table[COLOR_RGB565_TO_G8(pixel)];
+                            pixel = color_palette[COLOR_RGB565_TO_G8(pixel)];
                             break;
                         }
                         case 2: {
-                            pixel = rainbow_table[COLOR_RGB565_TO_B8(pixel)];
+                            pixel = color_palette[COLOR_RGB565_TO_B8(pixel)];
                             break;
                         }
                         default: {
-                            pixel = rainbow_table[COLOR_RGB565_TO_GRAYSCALE(pixel)];
+                            pixel = color_palette[COLOR_RGB565_TO_GRAYSCALE(pixel)];
                             break;
                         }
                     }
@@ -1248,7 +1249,6 @@ static mp_obj_t py_image_compress(uint n_args, const mp_obj_t *args, mp_map_t *k
     PY_ASSERT_TRUE_MSG(out.bpp <= image_size(arg_img), "Can't compress in place!");
     memcpy(arg_img->data, out.data, out.bpp);
     arg_img->bpp = out.bpp;
-    fb_free();
     fb_alloc_free_till_mark();
 
     if (MAIN_FB()->pixels == arg_img->data) {
@@ -1306,7 +1306,6 @@ static mp_obj_t py_image_compress_for_ide(uint n_args, const mp_obj_t *args, mp_
 
     out.bpp = (((out.bpp * 8) + 5) / 6) + 2;
     arg_img->bpp = out.bpp;
-    fb_free();
     fb_alloc_free_till_mark();
 
     if (MAIN_FB()->pixels == arg_img->data) {
@@ -1331,7 +1330,6 @@ static mp_obj_t py_image_compressed(uint n_args, const mp_obj_t *args, mp_map_t 
     uint8_t *temp = xalloc(out.bpp);
     memcpy(temp, out.data, out.bpp);
     out.data = temp;
-    fb_free();
     fb_alloc_free_till_mark();
 
     return py_image_from_struct(&out);
@@ -1385,7 +1383,6 @@ static mp_obj_t py_image_compressed_for_ide(uint n_args, const mp_obj_t *args, m
 
     out.bpp = (((out.bpp * 8) + 5) / 6) + 2;
     out.data = temp;
-    fb_free();
     fb_alloc_free_till_mark();
 
     return py_image_from_struct(&out);
@@ -1515,7 +1512,6 @@ static mp_obj_t py_image_copy_int(uint n_args, const mp_obj_t *args, mp_map_t *k
     }
 
     if (in_place) {
-        fb_free();
         fb_alloc_free_till_mark();
     }
 
@@ -1945,7 +1941,6 @@ STATIC mp_obj_t py_image_mask_rectangle(uint n_args, const mp_obj_t *args, mp_ma
     imlib_draw_rectangle(&temp, arg_rx, arg_ry, arg_rw, arg_rh, -1, 0, true);
     imlib_zero(arg_img, &temp, true);
 
-    fb_free();
     fb_alloc_free_till_mark();
     return args[0];
 }
@@ -1980,7 +1975,6 @@ STATIC mp_obj_t py_image_mask_circle(uint n_args, const mp_obj_t *args, mp_map_t
     imlib_draw_circle(&temp, arg_cx, arg_cy, arg_cr, -1, 0, true);
     imlib_zero(arg_img, &temp, true);
 
-    fb_free();
     fb_alloc_free_till_mark();
     return args[0];
 }
@@ -2021,7 +2015,6 @@ STATIC mp_obj_t py_image_mask_ellipse(uint n_args, const mp_obj_t *args, mp_map_
     imlib_draw_ellipse(&temp, arg_cx, arg_cy, arg_rx, arg_ry, arg_r, -1, 0, true);
     imlib_zero(arg_img, &temp, true);
 
-    fb_free();
     fb_alloc_free_till_mark();
     return args[0];
 }
@@ -2848,7 +2841,6 @@ STATIC mp_obj_t py_image_morph(uint n_args, const mp_obj_t *args, mp_map_t *kw_a
         py_helper_keyword_to_image_mutable_mask(n_args, args, 8, kw_args);
 
     imlib_morph(arg_img, arg_ksize, arg_krn, arg_mul, arg_add, arg_threshold, arg_offset, arg_invert, arg_msk);
-    fb_free();
     fb_alloc_free_till_mark();
     return args[0];
 }
@@ -2905,8 +2897,6 @@ STATIC mp_obj_t py_image_gaussian(uint n_args, const mp_obj_t *args, mp_map_t *k
         py_helper_keyword_to_image_mutable_mask(n_args, args, 8, kw_args);
 
     imlib_morph(arg_img, arg_ksize, arg_krn, arg_mul, arg_add, arg_threshold, arg_offset, arg_invert, arg_msk);
-    fb_free();
-    fb_free();
     fb_alloc_free_till_mark();
     return args[0];
 }
@@ -2965,8 +2955,6 @@ STATIC mp_obj_t py_image_laplacian(uint n_args, const mp_obj_t *args, mp_map_t *
         py_helper_keyword_to_image_mutable_mask(n_args, args, 8, kw_args);
 
     imlib_morph(arg_img, arg_ksize, arg_krn, arg_mul, arg_add, arg_threshold, arg_offset, arg_invert, arg_msk);
-    fb_free();
-    fb_free();
     fb_alloc_free_till_mark();
     return args[0];
 }
@@ -3757,9 +3745,6 @@ mp_obj_t py_histogram_get_percentile(mp_obj_t self_in, mp_obj_t percentile)
 
     percentile_t p;
     imlib_get_percentile(&p, ((py_histogram_obj_t *) self_in)->bpp, &hist, mp_obj_get_float(percentile));
-    if (hist.BBinCount) fb_free();
-    if (hist.ABinCount) fb_free();
-    if (hist.LBinCount) fb_free();
     fb_alloc_free_till_mark();
 
     py_percentile_obj_t *o = m_new_obj(py_percentile_obj_t);
@@ -3798,9 +3783,6 @@ mp_obj_t py_histogram_get_threshold(mp_obj_t self_in)
 
     threshold_t t;
     imlib_get_threshold(&t, ((py_histogram_obj_t *) self_in)->bpp, &hist);
-    if (hist.BBinCount) fb_free();
-    if (hist.ABinCount) fb_free();
-    if (hist.LBinCount) fb_free();
     fb_alloc_free_till_mark();
 
     py_threshold_obj_t *o = m_new_obj(py_threshold_obj_t);
@@ -3839,9 +3821,6 @@ mp_obj_t py_histogram_get_statistics(mp_obj_t self_in)
 
     statistics_t stats;
     imlib_get_statistics(&stats, ((py_histogram_obj_t *) self_in)->bpp, &hist);
-    if (hist.BBinCount) fb_free();
-    if (hist.ABinCount) fb_free();
-    if (hist.LBinCount) fb_free();
     fb_alloc_free_till_mark();
 
     py_statistics_obj_t *o = m_new_obj(py_statistics_obj_t);
@@ -4001,9 +3980,6 @@ static mp_obj_t py_image_get_histogram(uint n_args, const mp_obj_t *args, mp_map
         ((mp_obj_list_t *) o->BBins)->items[i] = mp_obj_new_float(hist.BBins[i]);
     }
 
-    if (hist.BBinCount) fb_free();
-    if (hist.ABinCount) fb_free();
-    if (hist.LBinCount) fb_free();
     fb_alloc_free_till_mark();
 
     return o;
@@ -4087,9 +4063,6 @@ static mp_obj_t py_image_get_statistics(uint n_args, const mp_obj_t *args, mp_ma
 
     statistics_t stats;
     imlib_get_statistics(&stats, arg_img->bpp, &hist);
-    if (hist.BBinCount) fb_free();
-    if (hist.ABinCount) fb_free();
-    if (hist.LBinCount) fb_free();
     fb_alloc_free_till_mark();
 
     py_statistics_obj_t *o = m_new_obj(py_statistics_obj_t);
@@ -6087,11 +6060,13 @@ static mp_obj_t py_image_find_template(uint n_args, const mp_obj_t *args, mp_map
     // Find template
     rectangle_t r;
     float corr;
+    fb_alloc_mark();
     if (search == SEARCH_DS) {
         corr = imlib_template_match_ds(arg_img, arg_template, &r);
     } else {
         corr = imlib_template_match_ex(arg_img, arg_template, &roi, step, &r);
     }
+    fb_alloc_free_till_mark();
 
     if (corr > arg_thresh) {
         mp_obj_t rec_obj[4] = {
@@ -6122,7 +6097,9 @@ static mp_obj_t py_image_find_features(uint n_args, const mp_obj_t *args, mp_map
             "Region of interest is smaller than detector window!");
 
     // Detect objects
+    fb_alloc_mark();
     array_t *objects_array = imlib_detect_objects(arg_img, cascade, &roi);
+    fb_alloc_free_till_mark();
 
     // Add detected objects to a new Python list...
     mp_obj_t objects_list = mp_obj_new_list(0, NULL);
@@ -6201,7 +6178,9 @@ static mp_obj_t py_image_find_keypoints(uint n_args, const mp_obj_t *args, mp_ma
     #endif
 
     // Find keypoints
+    fb_alloc_mark();
     array_t *kpts = orb_find_keypoints(arg_img, normalized, threshold, scale_factor, max_keypoints, corner_detector, &roi);
+    fb_alloc_free_till_mark();
 
     if (array_length(kpts)) {
         py_kp_obj_t *kp_obj = m_new_obj(py_kp_obj_t);
@@ -6237,11 +6216,15 @@ static mp_obj_t py_image_find_edges(uint n_args, const mp_obj_t *args, mp_map_t 
 
     switch (edge_type) {
         case EDGE_SIMPLE: {
+            fb_alloc_mark();
             imlib_edge_simple(arg_img, &roi, thresh[0], thresh[1]);
+            fb_alloc_free_till_mark();
             break;
         }
         case EDGE_CANNY: {
+            fb_alloc_mark();
             imlib_edge_canny(arg_img, &roi, thresh[0], thresh[1]);
+            fb_alloc_free_till_mark();
             break;
         }
 
@@ -6262,7 +6245,9 @@ static mp_obj_t py_image_find_hog(uint n_args, const mp_obj_t *args, mp_map_t *k
 
     int size = py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_size), 8);
 
+    fb_alloc_mark();
     imlib_find_hog(arg_img, &roi, size);
+    fb_alloc_free_till_mark();
 
     return args[0];
 }
@@ -7381,6 +7366,7 @@ static mp_obj_t py_image_match_descriptor(uint n_args, const mp_obj_t *args, mp_
         mp_obj_t match_list = mp_obj_new_list(0, NULL);
 
         if (array_length(kpts1->kpts) && array_length(kpts1->kpts)) {
+            fb_alloc_mark();
             int *match = fb_alloc(array_length(kpts1->kpts) * sizeof(int) * 2);
 
             // Match the two keypoint sets
@@ -7396,7 +7382,7 @@ static mp_obj_t py_image_match_descriptor(uint n_args, const mp_obj_t *args, mp_
             }
 
             // Free match list
-            fb_free();
+            fb_alloc_free_till_mark();
 
             if (filter_outliers == true) {
                 count = orb_filter_keypoints(kpts2->kpts, &r, &c);

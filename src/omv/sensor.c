@@ -197,7 +197,7 @@ void sensor_init0()
     memset(JPEG_FB(), 0, sizeof(*JPEG_FB()));
 
     // Set default quality
-    JPEG_FB()->quality = 35;
+    JPEG_FB()->quality = ((JPEG_QUALITY_HIGH - JPEG_QUALITY_LOW) / 2) + JPEG_QUALITY_LOW;
 
     // Set fb_enabled
     JPEG_FB()->enabled = fb_enabled;
@@ -364,6 +364,9 @@ int sensor_init()
     // This is executed only once to initialize the FB enabled flag.
     JPEG_FB()->enabled = 0;
 
+    // Set default color palette.
+    sensor.color_palette = rainbow_table;
+
     /* All good! */
     return 0;
 }
@@ -377,6 +380,8 @@ int sensor_reset()
     sensor.framerate   = 0;
     sensor.gainceiling = 0;
     sensor.vsync_gpio  = NULL;
+    // Reset default color palette.
+    sensor.color_palette = rainbow_table;
 
     // Call sensor-specific reset function
     if (sensor.reset(&sensor) != 0) {
@@ -710,6 +715,19 @@ int sensor_set_lens_correction(int enable, int radi, int coef)
     return 0;
 }
 
+int sensor_ioctl(int request, ... /* arg */)
+{
+    int ret = -1;
+    if (sensor.ioctl != NULL) {
+        va_list ap;
+        va_start(ap, request);
+        /* call the sensor specific function */
+        ret = sensor.ioctl(&sensor, request, ap);
+        va_end(ap);
+    }
+    return ret;
+}
+
 int sensor_set_vsync_output(GPIO_TypeDef *gpio, uint32_t pin)
 {
     sensor.vsync_pin  = pin;
@@ -718,6 +736,17 @@ int sensor_set_vsync_output(GPIO_TypeDef *gpio, uint32_t pin)
     NVIC_SetPriority(DCMI_VSYNC_IRQN, IRQ_PRI_EXTINT);
     HAL_NVIC_EnableIRQ(DCMI_VSYNC_IRQN);
     return 0;
+}
+
+int sensor_set_color_palette(const uint16_t *color_palette)
+{
+    sensor.color_palette = color_palette;
+    return 0;
+}
+
+const uint16_t *sensor_get_color_palette()
+{
+    return sensor.color_palette;
 }
 
 void DCMI_VsyncExtiCallback()

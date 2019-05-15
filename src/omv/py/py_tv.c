@@ -555,6 +555,7 @@ static mp_obj_t py_tv_display(uint n_args, const mp_obj_t *args, mp_map_t *kw_ar
     uint16_t x = x1;
     uint16_t y = y1;
 
+    fb_alloc_mark();
     uint8_t *line = fb_alloc(w*2);
 
     while (y < y2) {
@@ -585,7 +586,7 @@ static mp_obj_t py_tv_display(uint n_args, const mp_obj_t *args, mp_map_t *kw_ar
         CS_PIN_WRITE(true);
         y++;
     }
-    fb_free();
+    fb_alloc_free_till_mark();
     return mp_const_none;
 }
 static mp_obj_t py_tv_palettes()

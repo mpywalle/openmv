@@ -27,7 +27,7 @@ typedef enum {
 } network_type_t;
 
 #define NN_LAYER_BASE   \
-    layer_type_t type;  \
+    uint32_t type;      \
     uint32_t n, c, h, w;\
     struct _layer *prev;\
     struct _layer *next \
@@ -62,7 +62,7 @@ typedef struct {
 
 typedef struct {
     NN_LAYER_BASE;
-    pool_type_t ptype;
+    uint32_t ptype;
     uint32_t krn_dim;
     uint32_t krn_str;
     uint32_t krn_pad;
@@ -93,9 +93,19 @@ typedef arm_status (*conv_func_t) (const q7_t * Im_in, const uint16_t dim_im_in,
         const uint16_t stride, const q7_t * bias, const uint16_t bias_shift, const uint16_t out_shift,
         q7_t * Im_out,  const uint16_t dim_im_out,  q15_t * bufferA,  q7_t * bufferB);
 
+typedef arm_status (*conv_func_nonsquare_t) (const q7_t * Im_in, const uint16_t dim_im_in_x, const uint16_t dim_im_in_y,
+        const uint16_t ch_im_in, const q7_t * wt, const uint16_t ch_im_out, const uint16_t dim_kernel_x, const uint16_t dim_kernel_y,
+        const uint16_t padding_x, const uint16_t padding_y, const uint16_t stride_x, const uint16_t stride_y, const q7_t * bias,
+        const uint16_t bias_shift, const uint16_t out_shift, q7_t * Im_out, const uint16_t dim_im_out_x, const uint16_t dim_im_out_y,
+        q15_t * bufferA,  q7_t * bufferB);
+
 typedef void (*pool_func_t)(q7_t * Im_in, const uint16_t dim_im_in, const uint16_t ch_im_in,
         const uint16_t dim_kernel, const uint16_t padding, const uint16_t stride,
         const uint16_t dim_im_out, q7_t * bufferA, q7_t * Im_out);
+
+typedef void (*pool_func_nonsquare_t)(q7_t * Im_in, const uint16_t dim_im_in_x, const uint16_t dim_im_in_y, const uint16_t ch_im_in,
+        const uint16_t dim_kernel, const uint16_t padding, const uint16_t stride,
+        const uint16_t dim_im_out_x, const uint16_t dim_im_out_y, q7_t * bufferA, q7_t * Im_out);
 
 
 int nn_dump_network(nn_t *net);
