@@ -3,12 +3,9 @@ import time
 import _thread
 from Sensor import TP, Button
 from Driver import DMotor, LED
+from KTLcd import *
 	
-def led(id, dt):
-	while 1:
-		pyb.LED(id).toggle()
-		time.sleep(dt)
-        
+       
 def real_time_temp(n, dt):
 	temp = TP()
 	cnt = 0
@@ -43,10 +40,24 @@ def get_button(id, dt):
 		print(status)
 		time.sleep(dt)
 
+def draw_face(id, dt):
+	lcd = KTLcd()
+	while 1:
+		lcd.clear_text()
+		lcd.draw_face('smile', 2, 10)
+		time.sleep(dt)
+		lcd.clear_text()
+		lcd.draw_face('cry', 2, 10)
+		time.sleep(dt)
+		lcd.clear_text()
+		lcd.draw_face('normal', 2, 10)
+		time.sleep(dt)
+		
+
 time.sleep(2000)
-#get_button(3, 5000)
-#led(1, 1000)
-#real_time_temp(1, 1000)
-#run_motor(1, 1000)
-exled(3, 200)
-#get_button(3, 5000)
+_thread.start_new_thread(real_time_temp, (1, 1000))
+_thread.start_new_thread(run_motor, (1, 1000))
+_thread.start_new_thread(draw_face, (1, 5000))
+_thread.start_new_thread(exled, (3, 200))
+time.sleep(200)
+_thread.start_new_thread(get_button, (3, 5000))
